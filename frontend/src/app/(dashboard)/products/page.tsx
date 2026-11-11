@@ -67,6 +67,8 @@ export default function ProductsPage() {
   const [reorderLevel, setReorderLevel] = useState(25)
   const [hasExpiry, setHasExpiry] = useState(false)
   const [description, setDescription] = useState("")
+  const [createImageFile, setCreateImageFile] = useState<File | null>(null)
+  const [createImagePreview, setCreateImagePreview] = useState<string | null>(null)
 
   // Category form state
   const [catName, setCatName] = useState("")
@@ -91,10 +93,29 @@ export default function ProductsPage() {
 
   // Mutations
   const createProductMutation = useMutation({
-    mutationFn: productsApi.create,
+    mutationFn: async ({
+      productData,
+      imageFile,
+    }: {
+      productData: any
+      imageFile?: File | null
+    }) => {
+      const newProd = await productsApi.create(productData)
+      if (imageFile) {
+        try {
+          const updated = await productsApi.uploadImage(newProd.id, imageFile)
+          return updated
+        } catch (err) {
+          console.error("Failed to upload image for new product", err)
+          toast.error("Product created, but image upload failed")
+          return newProd
+        }
+      }
+      return newProd
+    },
     onSuccess: (newProd) => {
       queryClient.invalidateQueries({ queryKey: ["products"] })
-      toast.success(`Product ${newProd.sku} created`)
+      toast.success(`Product ${newProd.sku} created successfully`)
       setOpenCreateModal(false)
       resetProductForm()
     },
@@ -143,6 +164,32 @@ export default function ProductsPage() {
     setReorderLevel(25)
     setHasExpiry(false)
     setDescription("")
+    if (createImagePreview) {
+      URL.revokeObjectURL(createImagePreview)
+    }
+    setCreateImageFile(null)
+    setCreateImagePreview(null)
+  }
+
+  const handleCreateImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0]
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image file size must be less than 5MB")
+        return
+      }
+      setCreateImageFile(file)
+      const previewUrl = URL.createObjectURL(file)
+      setCreateImagePreview(previewUrl)
+    }
+  }
+
+  const handleRemoveCreateImage = () => {
+    if (createImagePreview) {
+      URL.revokeObjectURL(createImagePreview)
+    }
+    setCreateImageFile(null)
+    setCreateImagePreview(null)
   }
 
   const handleOpenDetail = async (prodId: number) => {
@@ -427,29 +474,96 @@ export default function ProductsPage() {
                 placeholder="Product notes or handling requirements..."
               />
             </div>
+            <div className="col-span-2 space-y-1.5 pt-1">
+              <Label>Product Image (Optional)</Label>
+              {createImagePreview ? (
+                <div className="flex items-center space-x-4 p-3 border rounded-lg bg-slate-50">
+                  <div className="relative h-20 w-20 rounded-md overflow-hidden border bg-white flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={createImagePreview}
+                      alt="New product preview"
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {createImageFile?.name}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {(createImageFile ? createImageFile.size / 1024 : 0).toFixed(1)} KB
+                    </p>
+                    <div className="flex items-center space-x-2 mt-2">
+                      <label className="cursor-pointer">
+                        <Button size="sm" variant="outline" type="button" className="h-7 text-xs" asChild>
+                          <span>Change Image</span>
+                        </Button>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={handleCreateImageChange}
+                        />
+                      </label>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        className="h-7 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                        onClick={handleRemoveCreateImage}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-4 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors group">
+                  <div className="p-2 rounded-full bg-white shadow-sm text-slate-500 group-hover:text-blue-600 transition-colors mb-1.5">
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <span className="text-sm font-medium text-slate-700 group-hover:text-blue-600">
+                    Click to upload product image
+                  </span>
+                  <span className="text-xs text-slate-400 mt-0.5">
+                    PNG, JPG, or WebP up to 5MB (Optional)
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleCreateImageChange}
+                  />
+                </label>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenCreateModal(false)}>
               Cancel
             </Button>
             <Button
-              disabled={!sku || !name}
+              disabled={!sku || !name || createProductMutation.isPending}
               onClick={() =>
                 createProductMutation.mutate({
-                  sku,
-                  name,
-                  category_id: prodCatId,
-                  unit,
-                  barcode: barcode || undefined,
-                  qr_code: qrCode || undefined,
-                  min_stock: minStock,
-                  reorder_level: reorderLevel,
-                  has_expiry: hasExpiry,
-                  description,
+                  productData: {
+                    sku,
+                    name,
+                    category_id: prodCatId,
+                    unit,
+                    barcode: barcode || undefined,
+                    qr_code: qrCode || undefined,
+                    min_stock: minStock,
+                    reorder_level: reorderLevel,
+                    has_expiry: hasExpiry,
+                    description,
+                  },
+                  imageFile: createImageFile,
                 })
               }
             >
-              Save Product
+              {createProductMutation.isPending ? "Saving Product..." : "Save Product"}
             </Button>
           </DialogFooter>
         </DialogContent>

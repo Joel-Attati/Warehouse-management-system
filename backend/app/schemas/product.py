@@ -43,6 +43,7 @@ class ProductBase(BaseModel):
     has_expiry: bool = False
     status: ProductStatus = ProductStatus.active
     description: Optional[str] = None
+    image_path: Optional[str] = None
 
 
 class ProductCreate(ProductBase):

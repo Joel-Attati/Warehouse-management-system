@@ -213,6 +213,7 @@ async def create_product(
         has_expiry=data.has_expiry,
         status=data.status.value,
         description=data.description,
+        image_path=data.image_path if data.image_path else None,
     )
     db.add(prod)
     await db.flush()
